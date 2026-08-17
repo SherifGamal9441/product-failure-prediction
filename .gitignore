@@ -1,0 +1,26 @@
+# Competition data (download from Kaggle)
+*.csv
+*.zip
+!submissions/*.csv
+!sample_submission.csv.example
+
+# Training artifacts
+catboost_info/
+*.cbm
+*.pkl
+*.joblib
+*.h5
+*.keras
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
