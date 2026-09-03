@@ -19,6 +19,24 @@ If the headline number looks broken — it isn't. The maximum achievable AUC on 
 dataset is around **0.59**. The signal is genuinely that weak, and that fact shaped
 every decision in the notebook.
 
+## Leaderboard
+
+ITI Intake 46 InClass competition — the same public TPS Aug 2022 data, ranked within my
+cohort. Private leaderboard, scored on ~74% of the test data:
+
+| # | Score (AUC) |
+|---|---|
+| 1 | 0.59179 |
+| 2 | 0.59113 |
+| 3 | 0.59092 |
+| 4 | 0.59074 |
+| 5 | 0.59016 |
+| **6 — mine** | **0.58974** |
+
+![Private leaderboard](reports/leaderboard_private.png)
+
+Sixth, 0.00205 behind first. The fold standard deviation in my own grouped CV was ~0.007.
+
 ## The data
 
 - `product_code` — `A`–`E` in train, **`F`–`I` in test**. The test set contains product
@@ -33,15 +51,54 @@ every decision in the notebook.
 
 ### 1. Validation before modelling
 
-`product_code` differing between train and test means a random split flatters you: the
-model memorises product-specific quirks that will never transfer. Everything in this
-notebook is scored with **`StratifiedGroupKFold` grouped on `product_code`**, so
-validation always measures generalisation to an *unseen product*. That's the honest
-proxy for the leaderboard, and it's what makes the 0.59 ceiling visible.
+`product_code` differs between train and test, so the test set is made entirely of
+products the model has never seen. The validation that matches that is
+**`StratifiedGroupKFold` grouped on `product_code`** — each fold holds out a whole
+product, so the score measures generalisation to an unseen product.
+
+I built that first. Then, from the model-comparison cell onward, I switched to a plain
+`StratifiedKFold` and never switched back. Every table in S2, S3 and S5 below was scored
+with the random split, not the grouped one.
+
+I have since re-run the comparisons under the grouped split in `01_solution.ipynb`. The
+conclusions hold, and the numbers barely move:
+
+| | Random split | Grouped split |
+|---|---|---|
+| Logistic regression | 0.5893 | 0.58939 |
+| RankGauss + swish MLP | 0.5912 | 0.59191 |
+| Same LR on raw features, controlled comparison | 0.58747 | 0.58743 |
+
+**The split makes no measurable difference here** — about 5e-5 on the controlled
+comparison, against a fold standard deviation of ~0.007. That is not the result I
+expected, and it is worth stating plainly rather than implying the grouped CV rescued the
+analysis.
+
+The reason it doesn't bite: the per-unit `measurement_*` columns carry almost no
+product-specific structure, and the only genuinely product-level fields
+(`attribute_0`–`attribute_3`) are constant within a code and were dropped during feature
+selection. There is nothing product-specific left to memorise, so holding a product out
+costs the model nothing.
+
+That is still the useful lesson, just not the one I assumed. The grouped split was the
+right design — it is the only one that *could* have exposed leakage, and you cannot know
+in advance that there is none to expose. But building the right validation and then
+reporting numbers from a different one is how you end up describing an analysis you
+didn't run.
+
+The private leaderboard came in at **0.58974**, inside the range that every estimate here
+gives. The CV was well calibrated either way.
+
+**A measurement note.** Under grouped CV, the mean of the per-fold AUCs (0.59191) and the
+AUC of the pooled out-of-fold predictions (0.58311) differ by 0.009. That is not
+overfitting — each fold holds out a different product, so the folds' predicted
+probabilities sit on slightly different scales, and pooling them before ranking penalises
+the score. Mean-of-folds is the figure comparable to a random-split CV; the pooled number
+is not.
 
 ### 2. Linear models beat trees
 
-With the group-aware CV in place:
+Scored with plain `StratifiedKFold` — see the caveat in §1:
 
 | Model | Mean AUC | Std |
 |---|---|---|
@@ -109,12 +166,20 @@ dominate. Final submission: 50/50 rank average of the RankGauss MLP and the tune
 logistic regression. I also tried LDA in place of logistic regression, which held up
 about as well.
 
+Re-running this under the grouped split in `01_solution.ipynb` gives a pooled
+out-of-fold AUC of **0.58956** for the rank average, against **0.58834** for the logistic
+regression alone and **0.58658** for the MLP alone — so the blend genuinely helps, and
+neither member would have done as well by itself. The private leaderboard came in at
+**0.58974**, within 0.0002 of that out-of-fold estimate.
+
 ## What I learned
 
-**Design the validation split before touching a model.** The train/test `product_code`
-disjointness is the defining property of this dataset. Grouped CV was the single most
-important decision in the notebook; without it every subsequent number would have been
-fiction.
+**Design the validation split before touching a model — then keep using it.** I built
+grouped CV because the train/test `product_code` disjointness demanded it, then dropped it
+three cells later without noticing. Re-running everything under it afterwards showed the
+conclusions were safe — but I only know that because I went back and checked. Reporting
+numbers from a split you didn't use is a claim about an analysis you didn't run, whether
+or not it turns out to be true.
 
 **Weak signal inverts the usual model ranking.** "Try gradient boosting first" is good
 default advice, and it was wrong here. Low signal-to-noise plus a near-linear
@@ -140,20 +205,42 @@ That's more useful than a score.
 
 ```
 notebooks/
-  01_experiments.ipynb   full notebook: EDA, grouped CV harness, model and imputation
-                         comparisons, SHAP interaction analysis, Optuna searches, the
-                         NN architecture sweep, and the rank-blend submissions
-submissions/             representative submission files
+  01_solution.ipynb         the clean narrative, runs top to bottom: EDA, the
+                            grouped-vs-random validation comparison, model and imputation
+                            comparisons, the noise-floor check, the `loading` bug, the
+                            RankGauss MLP and the rank blend
+  02_experiments_log.ipynb  the raw exploration log in the order I hit things: SHAP
+                            interaction analysis, Optuna searches, the full NN
+                            architecture sweep, the fractal-net reimplementation.
+                            Preserved as-is -- it is the evidence behind the tables above,
+                            including the plain-`StratifiedKFold` scores flagged in S1
+reports/
+  leaderboard_private.png   private leaderboard
+submissions/                representative submission files
 ```
 
 ## Reproducing
 
-Download `train.csv`, `test.csv`, and `sample_submission.csv` from the
+The ITI competition used the unmodified public dataset, so this reproduces from the
+original Kaggle competition. Download `train.csv`, `test.csv` and `sample_submission.csv`
+from the
 [competition page](https://www.kaggle.com/competitions/tabular-playground-series-aug-2022/data)
 into the repo root.
 
 ```
 pip install -r requirements.txt
+jupyter nbconvert --to notebook --execute --inplace notebooks/01_solution.ipynb
 ```
 
-Data files are not committed (see `.gitignore`).
+Two environment variables control the notebook:
+
+- `DATA_DIR` — where the csv files live (default: the repo root).
+- `RUN_SEARCH=1` — re-run the Optuna searches and the full architecture sweep instead of
+  using the parameters they landed on. Off by default; the notebook runs in a few minutes
+  with it off.
+
+It trains on CPU in reasonable time; no GPU required.
+
+Data files are not committed (see `.gitignore`). What *is* committed is the leaderboard
+screenshot and the submission files, so the results above can be checked without
+re-running anything.
