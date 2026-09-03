@@ -244,3 +244,7 @@ It trains on CPU in reasonable time; no GPU required.
 Data files are not committed (see `.gitignore`). What *is* committed is the leaderboard
 screenshot and the submission files, so the results above can be checked without
 re-running anything.
+
+## License
+
+Code is MIT-licensed (see `LICENSE`). The competition data is not mine to license — it belongs to Kaggle/the original provider and is not redistributed here.
